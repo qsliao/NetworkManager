@@ -3737,6 +3737,8 @@ clients_common_libnmc_base_la_SOURCES = \
 	shared/nm-utils/nm-random-utils.h \
 	shared/nm-utils/nm-shared-utils.c \
 	shared/nm-utils/nm-shared-utils.h \
+	shared/nm-utils/nm-secret-utils.c \
+	shared/nm-utils/nm-secret-utils.h \
 	\
 	clients/common/nm-secret-agent-simple.c \
 	clients/common/nm-secret-agent-simple.h \
