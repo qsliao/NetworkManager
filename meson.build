@@ -10,7 +10,7 @@ project(
     'buildtype=debugoptimized',
     'c_std=gnu99'
   ],
-  meson_version: '>= 0.44.0'
+  meson_version: '>= 0.46.0'
 )
 
 nm_name = meson.project_name()
@@ -136,14 +136,15 @@ if enable_ld_gc
     '-ffunction-sections',
   ]
 
-  test_ldflags = ['-Wl,--gc-sections']
-
-  foreach cflag: test_cflags + test_ldflags
+  foreach cflag: test_cflags
     assert(cc.has_argument(cflag), 'Unused symbol eviction requested but not supported. Use -Dld_gc=false to build without it.')
   endforeach
 
+  test_ldflag = '-Wl,--gc-sections'
+  assert(cc.has_link_argument(test_ldflag), 'Unused symbol eviction requested but not supported. Use -Dld_gc=false to build without it.')
+
   common_flags += test_cflags
-  common_ldflags += test_ldflags
+  common_ldflags += test_ldflag
 endif
 
 if nm_debug
@@ -181,9 +182,9 @@ linker_script_binary   = join_paths(meson.source_root(), 'linker-script-binary.v
 linker_script_devices  = join_paths(meson.source_root(), 'linker-script-devices.ver')
 linker_script_settings = join_paths(meson.source_root(), 'linker-script-settings.ver')
 
-ldflags_linker_script_binary   = [ '-Wl,--version-script,@0@'.format(linker_script_binary) ]
-ldflags_linker_script_devices  = [ '-Wl,--version-script,@0@'.format(linker_script_devices) ]
-ldflags_linker_script_settings = [ '-Wl,--version-script,@0@'.format(linker_script_settings) ]
+ldflags_linker_script_binary   = cc.get_supported_link_arguments('-Wl,--version-script,@0@'.format(linker_script_binary))
+ldflags_linker_script_devices  = cc.get_supported_link_arguments('-Wl,--version-script,@0@'.format(linker_script_devices))
+ldflags_linker_script_settings = cc.get_supported_link_arguments('-Wl,--version-script,@0@'.format(linker_script_settings))
 
 uuid_dep = dependency('uuid')
 libelogind_dep = dependency('libelogind', version: '>= 219', required: false)
