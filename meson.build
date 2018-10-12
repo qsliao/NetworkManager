@@ -147,7 +147,7 @@ if enable_ld_gc
 endif
 
 if nm_debug
-  test_cflags = [
+  common_flags += cc.get_supported_arguments([
     '-fno-strict-aliasing',
     '-Wdeclaration-after-statement',
     '-Wfloat-equal',
@@ -171,9 +171,7 @@ if nm_debug
     '-Wtypedef-redefinition',
     '-Wundef',
     '-Wunknown-attributes'
-  ]
-
-  common_flags += cc.get_supported_arguments(test_cflags)
+  ])
 endif
 
 add_project_arguments(common_flags, language: 'c')
