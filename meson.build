@@ -216,7 +216,10 @@ config_h.set10('HAVE_LIBSYSTEMD', libsystemd_dep.found())
 systemd_dep = dependency('systemd', required: false)
 have_systemd_200 = systemd_dep.found() and systemd_dep.version().version_compare('>= 200')
 
-gio_unix_dep = dependency('gio-unix-2.0', version: '>= 2.40')
+glib_req_version = '>= 2.40'
+
+gio_dep = dependency('gio-2.0', version: glib_req_version)
+gio_unix_dep = dependency('gio-unix-2.0', version: glib_req_version)
 
 glib_dep = declare_dependency(
   dependencies: [
