@@ -2308,60 +2308,142 @@ nm_utils_is_specific_hostname (const char *name)
 
 /*****************************************************************************/
 
-gboolean
-nm_utils_machine_id_parse (const char *id_str, /*uuid_t*/ guchar *out_uuid)
+typedef struct {
+	NMUuid bin;
+	char _nul_sentinel; /* just for safety, if somebody accidentally uses the binary in a string context. */
+
+	/* depending on whether the string is packed or not (with/without hyphens),
+	 * it's 32 or 36 characters long (plus the trailing NUL).
+	 *
+	 * The difference is that boot-id is a valid RFC 4211 UUID and represented
+	 * as a 36 ascii string (with hyphens). The machine-id technically is not
+	 * a UUID, but just a 32 byte sequence of hexchars. */
+	char str[37];
+	bool is_fake;
+} UuidData;
+
+static UuidData *
+_uuid_data_init (UuidData *uuid_data,
+                 gboolean packed,
+                 gboolean is_fake,
+                 const NMUuid *uuid)
 {
-	int i;
-	guint8 v0, v1;
+	nm_assert (uuid_data);
+	nm_assert (uuid);
 
-	if (!id_str)
-		return FALSE;
-
-	for (i = 0; i < 32; i++) {
-		if (!g_ascii_isxdigit (id_str[i]))
-			return FALSE;
+	uuid_data->bin = *uuid;
+	uuid_data->_nul_sentinel = '\0';
+	uuid_data->is_fake = is_fake;
+	if (packed) {
+		G_STATIC_ASSERT_EXPR (sizeof (uuid_data->str) >= (sizeof (*uuid) * 2 + 1));
+		_nm_utils_bin2hexstr_full (uuid,
+		                           sizeof (*uuid),
+		                           '\0',
+		                           FALSE,
+		                           uuid_data->str);
+	} else {
+		G_STATIC_ASSERT_EXPR (sizeof (uuid_data->str) >= 37);
+		_nm_utils_uuid_unparse (uuid, uuid_data->str);
 	}
-	if (id_str[i] != '\0')
-		return FALSE;
-
-	if (out_uuid) {
-		for (i = 0; i < 16; i++) {
-			v0 = g_ascii_xdigit_value (*(id_str++));
-			v1 = g_ascii_xdigit_value (*(id_str++));
-			out_uuid[i] = (v0 << 4) + v1;
-		}
-	}
-	return TRUE;
+	return uuid_data;
 }
 
-char *
-nm_utils_machine_id_read (void)
+/*****************************************************************************/
+
+static const UuidData *
+_machine_id_get (void)
 {
-	gs_free char *contents = NULL;
-	int i;
+	static const UuidData *volatile p_uuid_data;
+	const UuidData *d;
 
-	/* Get the machine ID from /etc/machine-id; it's always in /etc no matter
-	 * where our configured SYSCONFDIR is.  Alternatively, it might be in
-	 * LOCALSTATEDIR /lib/dbus/machine-id.
-	 */
-	if (   !g_file_get_contents ("/etc/machine-id", &contents, NULL, NULL)
-	    && !g_file_get_contents (LOCALSTATEDIR "/lib/dbus/machine-id", &contents, NULL, NULL))
-		return NULL;
+again:
+	d = p_uuid_data;
+	if (G_UNLIKELY (!d)) {
+		static gsize lock;
+		static UuidData uuid_data;
+		gs_free char *content = NULL;
+		gboolean is_fake = TRUE;
+		NMUuid uuid;
 
-	contents = g_strstrip (contents);
-
-	for (i = 0; i < 32; i++) {
-		if (!g_ascii_isxdigit (contents[i]))
-			return NULL;
-		if (contents[i] >= 'A' && contents[i] <= 'F') {
-			/* canonicalize to lower-case */
-			contents[i] = 'a' + (contents[i] - 'A');
+		/* Get the machine ID from /etc/machine-id; it's always in /etc no matter
+		 * where our configured SYSCONFDIR is.  Alternatively, it might be in
+		 * LOCALSTATEDIR /lib/dbus/machine-id.
+		 */
+		if (   nm_utils_file_get_contents (-1, "/etc/machine-id", 100*1024, 0, &content, NULL, NULL) >= 0
+		    || nm_utils_file_get_contents (-1, LOCALSTATEDIR"/lib/dbus/machine-id", 100*1024, 0, &content, NULL, NULL) >= 0) {
+			g_strstrip (content);
+			if (_nm_utils_hexstr2bin_full (content,
+			                               FALSE,
+			                               FALSE,
+			                               NULL,
+			                               16,
+			                               (guint8 *) &uuid,
+			                               sizeof (uuid),
+			                               NULL)) {
+				if (!nm_utils_uuid_is_null (&uuid)) {
+					/* an all-zero machine-id is not valid. */
+					is_fake = FALSE;
+				}
+			}
 		}
-	}
-	if (contents[i] != '\0')
-		return NULL;
 
-	return g_steal_pointer (&contents);
+		if (is_fake) {
+			const guint8 *secret_key;
+			gsize len;
+
+			/* we have no valid machine-id. Generate a fake one. */
+			if (nm_utils_secret_key_get (&secret_key, &len)) {
+				/* we have a secret-key persisted on disk. Hash it and use that as base for the
+				 * machine-id. Salt with a randomly generated namespace UUID. */
+				nm_utils_uuid_generate_from_string_bin (&uuid,
+				                                        (const char *) secret_key,
+				                                        len,
+				                                        NM_UTILS_UUID_TYPE_VERSION5,
+				                                        "ab085f06-b629-46d1-a553-84eeba5683b6");
+			} else {
+				/* our secret-key also is not persisted to disk. Use the boot-id instead,
+				 * because that way, at least on service restart we will still use the same
+				 * ID. */
+				uuid = *nm_utils_get_boot_id_bin ();
+				if (nm_utils_uuid_is_null (&uuid))
+					nm_utils_random_bytes (&uuid, sizeof (uuid));
+			}
+		}
+
+		if (!g_once_init_enter (&lock))
+			goto again;
+
+		d = _uuid_data_init (&uuid_data, TRUE, is_fake, &uuid);
+		g_atomic_pointer_set (&p_uuid_data, d);
+		g_once_init_leave (&lock, 1);
+
+		if (is_fake) {
+			nm_log_err (LOGD_CORE,
+			            "/etc/machine-id: no valid machine-id. Use fake one based on boot-id: %s",
+			            d->str);
+		} else
+			nm_log_dbg (LOGD_CORE, "/etc/machine-id: %s", d->str);
+	}
+
+	return d;
+}
+
+const char *
+nm_utils_machine_id_str (void)
+{
+	return _machine_id_get ()->str;
+}
+
+const NMUuid *
+nm_utils_machine_id_bin (void)
+{
+	return &_machine_id_get ()->bin;
+}
+
+gboolean
+nm_utils_machine_id_is_fake (void)
+{
+	return _machine_id_get ()->is_fake;
 }
 
 /*****************************************************************************/
@@ -2483,34 +2565,52 @@ nm_utils_secret_key_get_timestamp (void)
 
 /*****************************************************************************/
 
-const char *
-nm_utils_get_boot_id (void)
+static const UuidData *
+_boot_id_get (void)
 {
-	static const char *boot_id;
+	static const UuidData *volatile p_boot_id;
+	const UuidData *d;
 
-	if (G_UNLIKELY (!boot_id)) {
+again:
+	d = p_boot_id;
+	if (G_UNLIKELY (!d)) {
+		static gsize lock;
+		static UuidData boot_id;
 		gs_free char *contents = NULL;
+		NMUuid uuid;
+		gboolean is_fake = FALSE;
 
 		nm_utils_file_get_contents (-1, "/proc/sys/kernel/random/boot_id", 0,
 		                            NM_UTILS_FILE_GET_CONTENTS_FLAG_NONE,
 		                            &contents, NULL, NULL);
-		if (contents) {
-			g_strstrip (contents);
-			if (contents[0]) {
-				/* clone @contents because we keep @boot_id until the program
-				 * ends.
-				 * nm_utils_file_get_contents() likely allocated a larger
-				 * buffer chunk initially and (although using realloc to shrink
-				 * the buffer) it might not be best to keep this memory
-				 * around. */
-				boot_id = g_strdup (contents);
-			}
+		if (   !contents
+		    || !_nm_utils_uuid_parse (nm_strstrip (contents), &uuid)) {
+			/* generate a random UUID instead. */
+			is_fake = TRUE;
+			_nm_utils_uuid_generate_random (&uuid);
 		}
-		if (!boot_id)
-			boot_id = nm_utils_uuid_generate ();
+
+		if (!g_once_init_enter (&lock))
+			goto again;
+
+		d = _uuid_data_init (&boot_id, FALSE, is_fake, &uuid);
+		g_atomic_pointer_set (&p_boot_id, d);
+		g_once_init_leave (&lock, 1);
 	}
 
-	return boot_id;
+	return d;
+}
+
+const char *
+nm_utils_get_boot_id_str (void)
+{
+	return _boot_id_get ()->str;
+}
+
+const NMUuid *
+nm_utils_get_boot_id_bin (void)
+{
+	return &_boot_id_get ()->bin;
 }
 
 /*****************************************************************************/
@@ -2839,7 +2939,7 @@ nm_utils_stable_id_parse (const char *stable_id,
 		if (CHECK_PREFIX ("${CONNECTION}"))
 			_stable_id_append (str, uuid);
 		else if (CHECK_PREFIX ("${BOOT}"))
-			_stable_id_append (str, bootid ?: nm_utils_get_boot_id ());
+			_stable_id_append (str, bootid ?: nm_utils_get_boot_id_str ());
 		else if (CHECK_PREFIX ("${DEVICE}"))
 			_stable_id_append (str, deviceid);
 		else if (g_str_has_prefix (&stable_id[i], "${RANDOM}")) {
