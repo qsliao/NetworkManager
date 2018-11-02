@@ -6588,6 +6588,12 @@ static gboolean nmc_editor_cb_called;
 static GError *nmc_editor_error;
 static MonitorACInfo *nmc_editor_monitor_ac;
 
+static void
+editor_connection_changed_cb (NMConnection *connection, gboolean *changed)
+{
+	*changed = TRUE;
+}
+
 /*
  * Store 'error' to shared 'nmc_editor_error' and monitoring info to
  * 'nmc_editor_monitor_ac' and signal the condition so that
@@ -7212,6 +7218,7 @@ editor_menu_main (NmCli *nmc, NMConnection *connection, const char *connection_t
 	gboolean temp_changes;
 	GError *err1 = NULL;
 	NmcEditorMenuContext menu_ctx = { 0 };
+	gulong handler_id;
 
 	s_con = nm_connection_get_setting_connection (connection);
 	if (s_con)
@@ -7237,7 +7244,7 @@ editor_menu_main (NmCli *nmc, NMConnection *connection, const char *connection_t
 		gs_free char *cmd_arg_s = NULL;
 		gs_free char *cmd_arg_p = NULL;
 		gs_free char *cmd_arg_v = NULL;
-		gboolean dirty;
+		gboolean dirty, connection_changed;
 
 		/* Connection is dirty? (not saved or differs from the saved) */
 		dirty = is_connection_dirty (connection, rem_con);
@@ -7764,9 +7771,19 @@ editor_menu_main (NmCli *nmc, NMConnection *connection, const char *connection_t
 					update_connection (persistent, rem_con, update_connection_editor_cb, NULL);
 				}
 
-				//FIXME: add also a timeout for cases the callback is not called
+				connection_changed = FALSE;
+				handler_id = g_signal_connect (rem_con,
+				                               NM_CONNECTION_CHANGED,
+				                               G_CALLBACK (editor_connection_changed_cb),
+				                               &connection_changed);
+
 				while (!nmc_editor_cb_called)
 					g_main_context_iteration (NULL, TRUE);
+
+				while (!connection_changed)
+					g_main_context_iteration (NULL, TRUE);
+
+				g_signal_handler_disconnect (rem_con, handler_id);
 
 				if (nmc_editor_error) {
 					g_print (_("Error: Failed to save '%s' (%s) connection: %s\n"),
