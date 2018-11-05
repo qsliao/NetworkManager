@@ -78,6 +78,7 @@
 #include "NetworkManagerUtils.h"
 #include "nm-dispatcher.h"
 #include "nm-hostname-manager.h"
+#include "nm-keyfile-internal.h"
 
 /*****************************************************************************/
 
@@ -978,12 +979,47 @@ claim_connection (NMSettings *self, NMSettingsConnection *sett_conn)
 
 	path = nm_dbus_object_export (NM_DBUS_OBJECT (sett_conn));
 
-	nm_utils_log_connection_diff (nm_settings_connection_get_connection (sett_conn),
-	                              NULL,
-	                              LOGL_DEBUG,
-	                              LOGD_CORE,
-	                              "new connection", "++ ",
-	                              path);
+	if (nm_logging_enabled (LOGL_DEBUG, LOGD_CORE)) {
+		GKeyFile *key_file;
+		gs_unref_object NMConnection *conn = NULL;
+		const char *con_type;
+
+		conn = nm_settings_connection_get_connection (sett_conn);
+		con_type = nm_connection_get_connection_type (conn);
+		conn = nm_simple_connection_new_clone (conn);
+		nm_connection_clear_secrets (conn);
+
+		nm_log (LOGL_DEBUG, LOGD_CORE, NULL, NULL,
+		        "connection '%s' (%p/%s/%s%s%s):%s%s%s",
+		        nm_settings_connection_get_id (sett_conn),
+		        conn, G_OBJECT_TYPE_NAME (conn),
+		        NM_PRINT_FMT_QUOTE_STRING (con_type),
+		        NM_PRINT_FMT_QUOTED (path, " [", path, "]", ""));
+
+		key_file = nm_keyfile_write (conn, NULL, NULL, &error);
+		if (key_file) {
+			char **groups, **keys;
+			int g, k;
+
+			groups = g_key_file_get_groups (key_file, NULL);
+			for (g = 0; groups && groups[g]; g++) {
+				keys = g_key_file_get_keys (key_file, groups[g], NULL, NULL);
+				for (k = 0; keys && keys[k]; k++) {
+					nm_log (LOGL_DEBUG, LOGD_CORE, NULL, NULL,
+					        "  %s.%s = %s",
+					        groups[g],
+					        keys[k],
+					        g_key_file_get_string (key_file, groups[g], keys[k], NULL));
+				}
+				g_free (keys);
+			}
+			g_free (groups);
+		} else {
+			nm_log (LOGL_DEBUG, LOGD_CORE, NULL, NULL,
+			        "ERROR: can't display connection as keyfile: %s", error->message);
+			g_clear_error (&error);
+		}
+	}
 
 	/* Only emit the individual connection-added signal after connections
 	 * have been initially loaded.
