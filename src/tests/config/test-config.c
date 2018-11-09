@@ -622,7 +622,7 @@ _set_values_user (NMConfig *config,
 	else
 		NMTST_EXPECT_NM_INFO ("config: signal: SIGHUP (no changes from disk)*");
 
-	nm_config_reload (config, NM_CONFIG_CHANGE_CAUSE_SIGHUP);
+	nm_config_reload (config, NM_CONFIG_CHANGE_CAUSE_SIGHUP, FALSE);
 
 	g_test_assert_expected_messages ();
 
@@ -926,15 +926,15 @@ test_config_signal (void)
 
 	expected = NM_CONFIG_CHANGE_CAUSE_SIGUSR1;
 	NMTST_EXPECT_NM_INFO ("config: signal: SIGUSR1");
-	nm_config_reload (config, expected);
+	nm_config_reload (config, expected, FALSE);
 
 	expected = NM_CONFIG_CHANGE_CAUSE_SIGUSR2;
 	NMTST_EXPECT_NM_INFO ("config: signal: SIGUSR2");
-	nm_config_reload (config, expected);
+	nm_config_reload (config, expected, FALSE);
 
 	expected = NM_CONFIG_CHANGE_CAUSE_SIGHUP;
 	NMTST_EXPECT_NM_INFO ("config: signal: SIGHUP (no changes from disk)*");
-	nm_config_reload (config, expected);
+	nm_config_reload (config, expected, FALSE);
 
 	/* test with subscribing two signals...
 	 *
@@ -946,7 +946,7 @@ test_config_signal (void)
 	                  &expected);
 	expected = NM_CONFIG_CHANGE_CAUSE_SIGUSR2;
 	NMTST_EXPECT_NM_INFO ("config: signal: SIGUSR2");
-	nm_config_reload (config, NM_CONFIG_CHANGE_CAUSE_SIGUSR2);
+	nm_config_reload (config, NM_CONFIG_CHANGE_CAUSE_SIGUSR2, FALSE);
 	g_signal_handlers_disconnect_by_func (config, _test_signal_config_changed_cb2, &expected);
 
 	g_signal_handlers_disconnect_by_func (config, _test_signal_config_changed_cb, &expected);
