@@ -1367,6 +1367,11 @@ noinst_LTLIBRARIES += \
 	src/libNetworkManager.la \
 	src/libsystemd-nm.la
 
+check-config-options:
+	$(srcdir)/tools/check-config-options.sh "$(srcdir)"
+
+check_local += check-config-options
+
 ###############################################################################
 
 noinst_LTLIBRARIES += shared/libcsiphash.la

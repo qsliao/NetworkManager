@@ -82,6 +82,7 @@
 #define NM_CONFIG_KEYFILE_KEY_CONNECTIVITY_INTERVAL         "interval"
 #define NM_CONFIG_KEYFILE_KEY_CONNECTIVITY_RESPONSE         "response"
 #define NM_CONFIG_KEYFILE_KEY_CONNECTIVITY_URI              "uri"
+#define NM_CONFIG_KEYFILE_KEY_CONNECTIVITY_TEST              "uri"
 
 #define NM_CONFIG_KEYFILE_KEY_KEYFILE_PATH                  "path"
 #define NM_CONFIG_KEYFILE_KEY_KEYFILE_UNMANAGED_DEVICES     "unmanaged-devices"
@@ -104,8 +105,8 @@
 #define NM_CONFIG_KEYFILE_KEY_DEVICE_MATCH_DEVICE           "match-device"
 #define NM_CONFIG_KEYFILE_KEY_DEVICE_STOP_MATCH             "stop-match"
 
-#define NM_CONFIG_KEYFILE_KEY_ATOMIC_SECTION_WAS            ".was"
-#define NM_CONFIG_KEYFILE_KEY_CONFIG_ENABLE                 "enable"
+#define NM_CONFIG_KEYFILE_KEY_ATOMIC_SECTION_WAS            ".was"      /* skip */
+#define NM_CONFIG_KEYFILE_KEY_CONFIG_ENABLE                 "enable"    /* skip */
 
 #define NM_CONFIG_KEYFILE_KEYPREFIX_WAS                     ".was."
 #define NM_CONFIG_KEYFILE_KEYPREFIX_SET                     ".set."

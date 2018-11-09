@@ -743,6 +743,8 @@ typedef struct {
 	bool accept_all:1;
 } ConfigGroup;
 
+/** START OPTION LIST **/
+
 static const ConfigGroup config_groups[] = {
 	{
 		.group = NM_CONFIG_KEYFILE_GROUP_MAIN,
@@ -840,6 +842,8 @@ static const ConfigGroup config_groups[] = {
 	},
 	{ } /* sentinel */
 };
+
+/** END OPTION LIST **/
 
 static gboolean
 check_config_key (const char *group, const char *key)
